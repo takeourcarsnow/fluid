@@ -9,6 +9,12 @@
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            -khtml-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
         }
 
         body {
@@ -16,6 +22,10 @@
             background: #000;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: #fff;
+            position: fixed;
+            width: 100%;
+            height: 100%;
+            touch-action: none;
         }
 
         #loading-screen {
@@ -30,6 +40,7 @@
             justify-content: center;
             align-items: center;
             z-index: 1000;
+            transition: opacity 0.5s ease-out;
         }
 
         #start-button {
@@ -41,11 +52,19 @@
             border-radius: 5px;
             cursor: pointer;
             margin-bottom: 20px;
-            transition: background-color 0.3s;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
 
         #start-button:hover {
             background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0,0,0,0.2);
+        }
+
+        #start-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .instructions {
@@ -55,6 +74,7 @@
             font-size: 14px;
             color: #ccc;
             line-height: 1.4;
+            padding: 0 20px;
         }
 
         #debug-info {
@@ -68,6 +88,8 @@
             font-size: 12px;
             z-index: 100;
             pointer-events: none;
+            white-space: pre;
+            line-height: 1.5;
         }
 
         #error-message {
@@ -81,26 +103,142 @@
             border-radius: 5px;
             z-index: 1000;
             display: none;
+            animation: fadeIn 0.3s ease-out;
+            text-align: center;
+            max-width: 90%;
+            word-wrap: break-word;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translate(-50%, -20px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
+        }
+
+        .loader {
+            width: 48px;
+            height: 48px;
+            border: 5px solid #fff;
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            display: inline-block;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes rotation {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
         canvas {
             position: fixed;
             top: 0;
             left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            touch-action: none;
+        }
+
+        .controls {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 100;
+            display: flex;
+            gap: 10px;
+        }
+
+        .control-button {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s ease;
+        }
+
+        .control-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        @media (max-width: 768px) {
+            #debug-info {
+                font-size: 10px;
+            }
+
+            .instructions {
+                font-size: 12px;
+            }
+
+            .control-button {
+                padding: 6px 10px;
+                font-size: 12px;
+            }
         }
     </style>
 </head>
 <body>
     <div id="loading-screen">
+        <div class="loader"></div>
         <button id="start-button">Start Simulation</button>
         <div class="instructions">
             <p>Tilt your device to control the fluid simulation.</p>
             <p>Touch the screen to interact with particles.</p>
+            <p>Please allow sensor access when prompted.</p>
         </div>
     </div>
 
     <div id="debug-info"></div>
     <div id="error-message"></div>
+
+    <div class="controls">
+        <button class="control-button" id="reset-button">Reset</button>
+        <button class="control-button" id="toggle-debug">Debug</button>
+    </div>
+
+    <script>
+        // Handle control buttons
+        document.getElementById('reset-button')?.addEventListener('click', () => {
+            window.location.reload();
+        });
+
+        document.getElementById('toggle-debug')?.addEventListener('click', () => {
+            const debugInfo = document.getElementById('debug-info');
+            if (debugInfo) {
+                debugInfo.style.display = debugInfo.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+
+        // Prevent default touch behaviors
+        document.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+        document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+        document.addEventListener('touchend', (e) => e.preventDefault(), { passive: false });
+
+        // Handle visibility change
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) {
+                document.getElementById('loading-screen').style.opacity = '0.5';
+            } else {
+                document.getElementById('loading-screen').style.opacity = '1';
+            }
+        });
+
+        // Error handling
+        window.addEventListener('error', (e) => {
+            console.error('Global error:', e.error);
+            const errorElement = document.getElementById('error-message');
+            if (errorElement) {
+                errorElement.textContent = 'Error: ' + e.error.message;
+                errorElement.style.display = 'block';
+                setTimeout(() => {
+                    errorElement.style.display = 'none';
+                }, 5000);
+            }
+        });
+    </script>
 
     <script type="module" src="/src/app.js"></script>
 </body>
