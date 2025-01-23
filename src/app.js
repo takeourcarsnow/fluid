@@ -4,8 +4,8 @@ import * as Matter from 'matter-js';
 
 const CONFIG = {
     particles: {
-        count: 500,
-        size: 0.5,
+        count: 200,
+        size: 20,
         color: 0x00ff00,
         physicsSize: 0.2,
         restitution: 0.7,
@@ -14,15 +14,15 @@ const CONFIG = {
         airFriction: 0.01
     },
     physics: {
-        gravityScale: 0.05,
+        gravityScale: 0.1,
         viscosity: 0.01,
         surfaceTension: 0.05,
         iterations: 4
     },
     container: {
-        width: 10,
-        height: 10,
-        depth: 10
+        width: 20,
+        height: 20,
+        depth: 20
     },
     debug: {
         enabled: true
@@ -79,8 +79,7 @@ class FluidSimulation {
             1000
         );
         
-        // Set camera position
-        this.camera.position.z = 20;
+        this.camera.position.z = 40;
         
         this.setupRenderer();
         this.setupScene();
@@ -90,11 +89,10 @@ class FluidSimulation {
         this.setupDebug();
         this.setupEventListeners();
 
-        // Add initial velocities
         this.physicsParticles.forEach(particle => {
             Matter.Body.setVelocity(particle, {
-                x: (Math.random() - 0.5) * 2,
-                y: (Math.random() - 0.5) * 2
+                x: (Math.random() - 0.5) * 5,
+                y: (Math.random() - 0.5) * 5
             });
         });
 
@@ -113,13 +111,15 @@ class FluidSimulation {
         this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         this.renderer.setClearColor(0x000000, 1);
         
+        const existingCanvas = document.querySelector('canvas');
+        if (existingCanvas) existingCanvas.remove();
+        
         document.body.appendChild(this.renderer.domElement);
     }
 
     setupScene() {
         DEBUG.log('Setting up scene...');
 
-        // Lighting
         const ambientLight = new THREE.AmbientLight(0x404040);
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
         directionalLight.position.set(1, 1, 1);
@@ -127,7 +127,6 @@ class FluidSimulation {
         this.scene.add(ambientLight);
         this.scene.add(directionalLight);
 
-        // Container visualization
         const containerGeometry = new THREE.BoxGeometry(
             CONFIG.container.width,
             CONFIG.container.height,
@@ -159,7 +158,6 @@ class FluidSimulation {
         this.world = this.engine.world;
         this.world.gravity.scale = 0;
 
-        // Create container bounds
         const wallOptions = {
             isStatic: true,
             restitution: 0.7,
@@ -179,30 +177,26 @@ class FluidSimulation {
     setupParticles() {
         DEBUG.log('Setting up particles...');
         
-        const particleGeometry = new THREE.BufferGeometry();
+        const geometry = new THREE.BufferGeometry();
         const positions = new Float32Array(CONFIG.particles.count * 3);
         const colors = new Float32Array(CONFIG.particles.count * 3);
-        const sizes = new Float32Array(CONFIG.particles.count);
 
         this.physicsParticles = [];
 
-        // Create particles in a grid pattern
-        const gridSize = Math.ceil(Math.sqrt(CONFIG.particles.count));
         for (let i = 0; i < CONFIG.particles.count; i++) {
-            const x = ((i % gridSize) / gridSize - 0.5) * CONFIG.container.width * 0.8;
-            const y = (Math.floor(i / gridSize) / gridSize - 0.5) * CONFIG.container.height * 0.8;
-            const z = 0;
-
+            const col = i % Math.sqrt(CONFIG.particles.count);
+            const row = Math.floor(i / Math.sqrt(CONFIG.particles.count));
+            
+            const x = (col - Math.sqrt(CONFIG.particles.count)/2) * 2;
+            const y = (row - Math.sqrt(CONFIG.particles.count)/2) * 2;
+            
             positions[i * 3] = x;
             positions[i * 3 + 1] = y;
-            positions[i * 3 + 2] = z;
+            positions[i * 3 + 2] = 0;
 
-            // Bright green color
             colors[i * 3] = 0;
             colors[i * 3 + 1] = 1;
             colors[i * 3 + 2] = 0;
-
-            sizes[i] = CONFIG.particles.size;
 
             const particle = Matter.Bodies.circle(
                 x, y,
@@ -219,20 +213,23 @@ class FluidSimulation {
             Matter.World.add(this.world, particle);
         }
 
-        particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-        const particleMaterial = new THREE.PointsMaterial({
+        const material = new THREE.PointsMaterial({
             size: CONFIG.particles.size,
+            sizeAttenuation: true,
             vertexColors: true,
             transparent: true,
-            opacity: 0.8,
-            sizeAttenuation: true
+            opacity: 1,
+            alphaTest: 0.5,
+            depthWrite: false
         });
 
-        this.particles = new THREE.Points(particleGeometry, particleMaterial);
+        this.particles = new THREE.Points(geometry, material);
         this.scene.add(this.particles);
+        
+        DEBUG.log('Particles created:', CONFIG.particles.count);
     }
 
     setupSensors() {
@@ -277,7 +274,6 @@ class FluidSimulation {
             z: this.filters.accelerationZ.filter(event.accelerationIncludingGravity.z || 0)
         };
 
-        // Apply immediate force to world
         this.world.gravity.x = this.sensorData.acceleration.x * CONFIG.physics.gravityScale;
         this.world.gravity.y = -this.sensorData.acceleration.y * CONFIG.physics.gravityScale;
     }
@@ -340,9 +336,7 @@ class FluidSimulation {
     }
 
     updatePhysics(deltaTime) {
-        // Apply forces to all particles
         this.physicsParticles.forEach(particle => {
-            // Add some random movement
             const randomForce = {
                 x: (Math.random() - 0.5) * 0.0001,
                 y: (Math.random() - 0.5) * 0.0001
@@ -350,14 +344,12 @@ class FluidSimulation {
 
             Matter.Body.applyForce(particle, particle.position, randomForce);
 
-            // Apply velocity damping
             Matter.Body.setVelocity(particle, {
                 x: particle.velocity.x * (1 - CONFIG.physics.viscosity),
                 y: particle.velocity.y * (1 - CONFIG.physics.viscosity)
             });
         });
 
-        // Update physics engine
         Matter.Engine.update(this.engine, deltaTime * 1000);
     }
 
@@ -396,9 +388,12 @@ class FluidSimulation {
 
         const deltaTime = this.clock.getDelta();
 
-        this.updatePhysics(deltaTime);
+        this.scene.updateMatrixWorld();
+        
+        this.updatePhysics(deltaTime * 2);
         this.updateParticles();
 
+        this.renderer.clear();
         this.renderer.render(this.scene, this.camera);
 
         if (this.stats) {
@@ -438,7 +433,6 @@ class FluidSimulation {
     }
 }
 
-// Initialize application
 document.addEventListener('DOMContentLoaded', () => {
     DEBUG.log('Application initializing...');
     
