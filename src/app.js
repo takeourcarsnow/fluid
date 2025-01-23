@@ -1,3 +1,7 @@
+import * as THREE from 'three';
+import Stats from 'stats.js';
+import * as Matter from 'matter-js';
+
 // Configuration
 const CONFIG = {
     particles: {
@@ -65,7 +69,34 @@ const DEBUG = {
     }
 };
 
-// Main Simulation Class
+// Shader definitions
+const Shaders = {
+    particle: {
+        vertex: `
+            attribute float size;
+            attribute vec3 color;
+            varying vec3 vColor;
+            uniform float time;
+
+            void main() {
+                vColor = color;
+                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = size * (300.0 / -mvPosition.z);
+                gl_Position = projectionMatrix * mvPosition;
+            }
+        `,
+        fragment: `
+            varying vec3 vColor;
+            void main() {
+                float r = length(gl_PointCoord - vec2(0.5));
+                if (r > 0.5) discard;
+                float intensity = 1.0 - (r * 2.0);
+                gl_FragColor = vec4(vColor * intensity, intensity);
+            }
+        `
+    }
+};
+
 class FluidSimulation {
     constructor() {
         DEBUG.log('Initializing simulation...');
@@ -108,10 +139,8 @@ class FluidSimulation {
     setupScene() {
         DEBUG.log('Setting up scene...');
         
-        // Set camera position
         this.camera.position.z = 15;
 
-        // Add lights
         const ambientLight = new THREE.AmbientLight(0x404040);
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
         directionalLight.position.set(1, 1, 1);
@@ -119,7 +148,6 @@ class FluidSimulation {
         this.scene.add(ambientLight);
         this.scene.add(directionalLight);
 
-        // Add container visualization
         const containerGeometry = new THREE.BoxGeometry(
             CONFIG.container.width,
             CONFIG.container.height,
@@ -151,7 +179,6 @@ class FluidSimulation {
         this.world = this.engine.world;
         this.world.gravity.scale = 0;
 
-        // Create container bounds
         const wallOptions = {
             isStatic: true,
             restitution: 0.7,
@@ -168,10 +195,9 @@ class FluidSimulation {
         Matter.World.add(this.world, this.walls);
     }
 
-setupParticles() {
+    setupParticles() {
         DEBUG.log('Setting up particles...');
         
-        // Create particle geometry
         const particleGeometry = new THREE.BufferGeometry();
         const positions = new Float32Array(CONFIG.particles.count * 3);
         const colors = new Float32Array(CONFIG.particles.count * 3);
@@ -179,9 +205,7 @@ setupParticles() {
 
         this.physicsParticles = [];
 
-        // Initialize particles
         for (let i = 0; i < CONFIG.particles.count; i++) {
-            // Random positions within container
             const x = (Math.random() - 0.5) * CONFIG.container.width * 0.8;
             const y = (Math.random() - 0.5) * CONFIG.container.height * 0.8;
             const z = (Math.random() - 0.5) * CONFIG.container.depth * 0.8;
@@ -190,17 +214,14 @@ setupParticles() {
             positions[i * 3 + 1] = y;
             positions[i * 3 + 2] = z;
 
-            // Set colors (green with slight variation)
-            const hue = 0.3 + Math.random() * 0.1; // Green hue
+            const hue = 0.3 + Math.random() * 0.1;
             const color = new THREE.Color().setHSL(hue, 1, 0.5);
             colors[i * 3] = color.r;
             colors[i * 3 + 1] = color.g;
             colors[i * 3 + 2] = color.b;
 
-            // Random sizes
             sizes[i] = Math.random() * 0.5 + 0.5;
 
-            // Create physics particle
             const particle = Matter.Bodies.circle(
                 x, y,
                 CONFIG.particles.physicsSize,
@@ -220,33 +241,12 @@ setupParticles() {
         particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-        // Create particle material
         const particleMaterial = new THREE.ShaderMaterial({
             uniforms: {
                 time: { value: 0 }
             },
-            vertexShader: `
-                attribute float size;
-                attribute vec3 color;
-                varying vec3 vColor;
-                uniform float time;
-
-                void main() {
-                    vColor = color;
-                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                    gl_PointSize = size * (300.0 / -mvPosition.z);
-                    gl_Position = projectionMatrix * mvPosition;
-                }
-            `,
-            fragmentShader: `
-                varying vec3 vColor;
-                void main() {
-                    float r = length(gl_PointCoord - vec2(0.5));
-                    if (r > 0.5) discard;
-                    float intensity = 1.0 - (r * 2.0);
-                    gl_FragColor = vec4(vColor * intensity, intensity);
-                }
-            `,
+            vertexShader: Shaders.particle.vertex,
+            fragmentShader: Shaders.particle.fragment,
             transparent: true,
             blending: THREE.AdditiveBlending,
             depthWrite: false
@@ -326,7 +326,6 @@ setupParticles() {
         const touchPosition = new THREE.Vector2(x, y);
         raycaster.setFromCamera(touchPosition, this.camera);
 
-        // Apply force to nearby particles
         const touchForce = 0.005;
         const touchRadius = 2;
 
@@ -351,7 +350,7 @@ setupParticles() {
         });
     }
 
-onResize() {
+    onResize() {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -363,24 +362,21 @@ onResize() {
         const sizes = this.particles.geometry.attributes.size.array;
 
         this.physicsParticles.forEach((particle, i) => {
-            // Update positions
             positions[i * 3] = particle.position.x;
             positions[i * 3 + 1] = particle.position.y;
             positions[i * 3 + 2] = 0;
 
-            // Update colors based on velocity
             const speed = Math.sqrt(
                 particle.velocity.x * particle.velocity.x +
                 particle.velocity.y * particle.velocity.y
             );
             
-            const hue = 0.3 + (speed * 0.2); // Shift color based on speed
+            const hue = 0.3 + (speed * 0.2);
             const color = new THREE.Color().setHSL(hue, 1, 0.5);
             colors[i * 3] = color.r;
             colors[i * 3 + 1] = color.g;
             colors[i * 3 + 2] = color.b;
 
-            // Update sizes
             sizes[i] = Math.max(0.5, 1 - Math.abs(positions[i * 3 + 2]) * 0.1);
         });
 
@@ -390,7 +386,6 @@ onResize() {
     }
 
     updatePhysics(deltaTime) {
-        // Apply gravity based on device orientation
         const gravity = {
             x: this.sensorData.acceleration.x * CONFIG.physics.gravityScale,
             y: -this.sensorData.acceleration.y * CONFIG.physics.gravityScale
@@ -398,7 +393,6 @@ onResize() {
 
         this.world.gravity = gravity;
 
-        // Apply viscosity
         this.physicsParticles.forEach(particle => {
             Matter.Body.setVelocity(particle, {
                 x: particle.velocity.x * (1 - CONFIG.physics.viscosity),
@@ -406,29 +400,6 @@ onResize() {
             });
         });
 
-        // Apply surface tension
-        for (let i = 0; i < this.physicsParticles.length; i++) {
-            const particleA = this.physicsParticles[i];
-            
-            for (let j = i + 1; j < this.physicsParticles.length; j++) {
-                const particleB = this.physicsParticles[j];
-                
-                const dx = particleB.position.x - particleA.position.x;
-                const dy = particleB.position.y - particleA.position.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-
-                if (distance < 2 && distance > 0) {
-                    const force = CONFIG.physics.surfaceTension * (1 - distance / 2);
-                    const fx = (dx / distance) * force;
-                    const fy = (dy / distance) * force;
-
-                    Matter.Body.applyForce(particleA, particleA.position, { x: fx, y: fy });
-                    Matter.Body.applyForce(particleB, particleB.position, { x: -fx, y: -fy });
-                }
-            }
-        }
-
-        // Update physics engine
         Matter.Engine.update(this.engine, deltaTime * 1000);
     }
 
@@ -463,7 +434,9 @@ onResize() {
         this.updateParticles();
 
         // Update shader uniforms
-        this.particles.material.uniforms.time.value = elapsedTime;
+        if (this.particles && this.particles.material.uniforms) {
+            this.particles.material.uniforms.time.value = elapsedTime;
+        }
 
         // Render
         this.renderer.render(this.scene, this.camera);
@@ -532,11 +505,37 @@ onResize() {
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
+    DEBUG.log('Application initializing...');
+    
     const startButton = document.getElementById('start-button');
     let simulation = null;
 
+    const showError = (message) => {
+        const errorElement = document.getElementById('error-message');
+        errorElement.textContent = message;
+        errorElement.style.display = 'block';
+        setTimeout(() => {
+            errorElement.style.display = 'none';
+        }, 5000);
+    };
+
+    const checkWebGLSupport = () => {
+        try {
+            const canvas = document.createElement('canvas');
+            return !!(window.WebGLRenderingContext && 
+                (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+        } catch (e) {
+            return false;
+        }
+    };
+
     startButton.addEventListener('click', async () => {
         try {
+            // Check WebGL support
+            if (!checkWebGLSupport()) {
+                throw new Error('WebGL is not supported in your browser');
+            }
+
             // Request device motion/orientation permissions (iOS)
             if (typeof DeviceOrientationEvent !== 'undefined' && 
                 typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -550,19 +549,16 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('loading-screen').style.display = 'none';
 
             // Create and start simulation
+            DEBUG.log('Creating simulation instance...');
             simulation = new FluidSimulation();
             simulation.start();
 
         } catch (error) {
             DEBUG.error('Failed to start simulation:', error);
+            showError(error.message);
             
-            const errorElement = document.getElementById('error-message');
-            errorElement.textContent = 'Error: ' + error.message;
-            errorElement.style.display = 'block';
-            
-            setTimeout(() => {
-                errorElement.style.display = 'none';
-            }, 5000);
+            // Show loading screen again
+            document.getElementById('loading-screen').style.display = 'flex';
         }
     });
 
@@ -576,4 +572,21 @@ document.addEventListener('DOMContentLoaded', () => {
             simulation.resume();
         }
     });
+
+    // Handle errors
+    window.addEventListener('error', (event) => {
+        DEBUG.error('Global error:', event.error);
+        showError('An error occurred: ' + event.error.message);
+    });
+
+    // Handle unhandled promise rejections
+    window.addEventListener('unhandledrejection', (event) => {
+        DEBUG.error('Unhandled promise rejection:', event.reason);
+        showError('An error occurred: ' + event.reason);
+    });
 });
+
+// Export for debugging
+if (CONFIG.debug.enabled) {
+    window.__DEBUG__ = DEBUG;
+}
