@@ -2,20 +2,19 @@ import * as THREE from 'three';
 import Stats from 'stats.js';
 import * as Matter from 'matter-js';
 
-// Configuration
 const CONFIG = {
     particles: {
-        count: 1000,
-        size: 0.2,
+        count: 500,
+        size: 0.5,
         color: 0x00ff00,
-        physicsSize: 0.1,
+        physicsSize: 0.2,
         restitution: 0.7,
         friction: 0.1,
         density: 0.001,
         airFriction: 0.01
     },
     physics: {
-        gravityScale: 0.001,
+        gravityScale: 0.05,
         viscosity: 0.01,
         surfaceTension: 0.05,
         iterations: 4
@@ -30,7 +29,6 @@ const CONFIG = {
     }
 };
 
-// Utility class for sensor data filtering
 class KalmanFilter {
     constructor() {
         this.R = 0.01;
@@ -57,7 +55,6 @@ class KalmanFilter {
     }
 }
 
-// Debug logging utility
 const DEBUG = {
     log: function(...args) {
         if (CONFIG.debug.enabled) {
@@ -66,34 +63,6 @@ const DEBUG = {
     },
     error: function(...args) {
         console.error('[Fluid Simulation]', ...args);
-    }
-};
-
-// Shader definitions
-const Shaders = {
-    particle: {
-        vertex: `
-            attribute float size;
-            attribute vec3 color;
-            varying vec3 vColor;
-            uniform float time;
-
-            void main() {
-                vColor = color;
-                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                gl_PointSize = size * (300.0 / -mvPosition.z);
-                gl_Position = projectionMatrix * mvPosition;
-            }
-        `,
-        fragment: `
-            varying vec3 vColor;
-            void main() {
-                float r = length(gl_PointCoord - vec2(0.5));
-                if (r > 0.5) discard;
-                float intensity = 1.0 - (r * 2.0);
-                gl_FragColor = vec4(vColor * intensity, intensity);
-            }
-        `
     }
 };
 
@@ -110,6 +79,9 @@ class FluidSimulation {
             1000
         );
         
+        // Set camera position
+        this.camera.position.z = 20;
+        
         this.setupRenderer();
         this.setupScene();
         this.setupPhysics();
@@ -117,6 +89,14 @@ class FluidSimulation {
         this.setupSensors();
         this.setupDebug();
         this.setupEventListeners();
+
+        // Add initial velocities
+        this.physicsParticles.forEach(particle => {
+            Matter.Body.setVelocity(particle, {
+                x: (Math.random() - 0.5) * 2,
+                y: (Math.random() - 0.5) * 2
+            });
+        });
 
         DEBUG.log('Simulation initialized');
     }
@@ -138,9 +118,8 @@ class FluidSimulation {
 
     setupScene() {
         DEBUG.log('Setting up scene...');
-        
-        this.camera.position.z = 15;
 
+        // Lighting
         const ambientLight = new THREE.AmbientLight(0x404040);
         const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
         directionalLight.position.set(1, 1, 1);
@@ -148,6 +127,7 @@ class FluidSimulation {
         this.scene.add(ambientLight);
         this.scene.add(directionalLight);
 
+        // Container visualization
         const containerGeometry = new THREE.BoxGeometry(
             CONFIG.container.width,
             CONFIG.container.height,
@@ -179,6 +159,7 @@ class FluidSimulation {
         this.world = this.engine.world;
         this.world.gravity.scale = 0;
 
+        // Create container bounds
         const wallOptions = {
             isStatic: true,
             restitution: 0.7,
@@ -205,22 +186,23 @@ class FluidSimulation {
 
         this.physicsParticles = [];
 
+        // Create particles in a grid pattern
+        const gridSize = Math.ceil(Math.sqrt(CONFIG.particles.count));
         for (let i = 0; i < CONFIG.particles.count; i++) {
-            const x = (Math.random() - 0.5) * CONFIG.container.width * 0.8;
-            const y = (Math.random() - 0.5) * CONFIG.container.height * 0.8;
-            const z = (Math.random() - 0.5) * CONFIG.container.depth * 0.8;
+            const x = ((i % gridSize) / gridSize - 0.5) * CONFIG.container.width * 0.8;
+            const y = (Math.floor(i / gridSize) / gridSize - 0.5) * CONFIG.container.height * 0.8;
+            const z = 0;
 
             positions[i * 3] = x;
             positions[i * 3 + 1] = y;
             positions[i * 3 + 2] = z;
 
-            const hue = 0.3 + Math.random() * 0.1;
-            const color = new THREE.Color().setHSL(hue, 1, 0.5);
-            colors[i * 3] = color.r;
-            colors[i * 3 + 1] = color.g;
-            colors[i * 3 + 2] = color.b;
+            // Bright green color
+            colors[i * 3] = 0;
+            colors[i * 3 + 1] = 1;
+            colors[i * 3 + 2] = 0;
 
-            sizes[i] = Math.random() * 0.5 + 0.5;
+            sizes[i] = CONFIG.particles.size;
 
             const particle = Matter.Bodies.circle(
                 x, y,
@@ -241,15 +223,12 @@ class FluidSimulation {
         particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
 
-        const particleMaterial = new THREE.ShaderMaterial({
-            uniforms: {
-                time: { value: 0 }
-            },
-            vertexShader: Shaders.particle.vertex,
-            fragmentShader: Shaders.particle.fragment,
+        const particleMaterial = new THREE.PointsMaterial({
+            size: CONFIG.particles.size,
+            vertexColors: true,
             transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false
+            opacity: 0.8,
+            sizeAttenuation: true
         });
 
         this.particles = new THREE.Points(particleGeometry, particleMaterial);
@@ -293,10 +272,14 @@ class FluidSimulation {
         if (!event.accelerationIncludingGravity) return;
 
         this.sensorData.acceleration = {
-            x: this.filters.accelerationX.filter(event.accelerationIncludingGravity.x || 0),
-            y: this.filters.accelerationY.filter(event.accelerationIncludingGravity.y || 0),
+            x: this.filters.accelerationX.filter(event.accelerationIncludingGravity.x || 0) * 2,
+            y: this.filters.accelerationY.filter(event.accelerationIncludingGravity.y || 0) * 2,
             z: this.filters.accelerationZ.filter(event.accelerationIncludingGravity.z || 0)
         };
+
+        // Apply immediate force to world
+        this.world.gravity.x = this.sensorData.acceleration.x * CONFIG.physics.gravityScale;
+        this.world.gravity.y = -this.sensorData.acceleration.y * CONFIG.physics.gravityScale;
     }
 
     handleOrientation(event) {
@@ -356,51 +339,38 @@ class FluidSimulation {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
     }
 
-    updateParticles() {
-        const positions = this.particles.geometry.attributes.position.array;
-        const colors = this.particles.geometry.attributes.color.array;
-        const sizes = this.particles.geometry.attributes.size.array;
-
-        this.physicsParticles.forEach((particle, i) => {
-            positions[i * 3] = particle.position.x;
-            positions[i * 3 + 1] = particle.position.y;
-            positions[i * 3 + 2] = 0;
-
-            const speed = Math.sqrt(
-                particle.velocity.x * particle.velocity.x +
-                particle.velocity.y * particle.velocity.y
-            );
-            
-            const hue = 0.3 + (speed * 0.2);
-            const color = new THREE.Color().setHSL(hue, 1, 0.5);
-            colors[i * 3] = color.r;
-            colors[i * 3 + 1] = color.g;
-            colors[i * 3 + 2] = color.b;
-
-            sizes[i] = Math.max(0.5, 1 - Math.abs(positions[i * 3 + 2]) * 0.1);
-        });
-
-        this.particles.geometry.attributes.position.needsUpdate = true;
-        this.particles.geometry.attributes.color.needsUpdate = true;
-        this.particles.geometry.attributes.size.needsUpdate = true;
-    }
-
     updatePhysics(deltaTime) {
-        const gravity = {
-            x: this.sensorData.acceleration.x * CONFIG.physics.gravityScale,
-            y: -this.sensorData.acceleration.y * CONFIG.physics.gravityScale
-        };
-
-        this.world.gravity = gravity;
-
+        // Apply forces to all particles
         this.physicsParticles.forEach(particle => {
+            // Add some random movement
+            const randomForce = {
+                x: (Math.random() - 0.5) * 0.0001,
+                y: (Math.random() - 0.5) * 0.0001
+            };
+
+            Matter.Body.applyForce(particle, particle.position, randomForce);
+
+            // Apply velocity damping
             Matter.Body.setVelocity(particle, {
                 x: particle.velocity.x * (1 - CONFIG.physics.viscosity),
                 y: particle.velocity.y * (1 - CONFIG.physics.viscosity)
             });
         });
 
+        // Update physics engine
         Matter.Engine.update(this.engine, deltaTime * 1000);
+    }
+
+    updateParticles() {
+        const positions = this.particles.geometry.attributes.position.array;
+
+        this.physicsParticles.forEach((particle, i) => {
+            positions[i * 3] = particle.position.x;
+            positions[i * 3 + 1] = particle.position.y;
+            positions[i * 3 + 2] = 0;
+        });
+
+        this.particles.geometry.attributes.position.needsUpdate = true;
     }
 
     updateDebugInfo() {
@@ -425,30 +395,16 @@ class FluidSimulation {
         if (this.stats) this.stats.begin();
 
         const deltaTime = this.clock.getDelta();
-        const elapsedTime = this.clock.elapsedTime;
 
-        // Update physics
         this.updatePhysics(deltaTime);
-
-        // Update particles
         this.updateParticles();
 
-        // Update shader uniforms
-        if (this.particles && this.particles.material.uniforms) {
-            this.particles.material.uniforms.time.value = elapsedTime;
-        }
-
-        // Render
         this.renderer.render(this.scene, this.camera);
 
-        // Update debug info
-        if (this.stats && this.frameCount % 10 === 0) {
+        if (this.stats) {
             this.updateDebugInfo();
+            this.stats.end();
         }
-
-        this.frameCount++;
-
-        if (this.stats) this.stats.end();
 
         requestAnimationFrame(() => this.update());
     }
@@ -456,7 +412,6 @@ class FluidSimulation {
     start() {
         DEBUG.log('Starting simulation...');
         this.isRunning = true;
-        this.frameCount = 0;
         this.update();
     }
 
@@ -472,31 +427,11 @@ class FluidSimulation {
     }
 
     dispose() {
-        DEBUG.log('Disposing simulation...');
-        
         this.isRunning = false;
-        
-        // Remove event listeners
         window.removeEventListener('resize', this.onResize);
         window.removeEventListener('devicemotion', this.handleMotion);
         window.removeEventListener('deviceorientation', this.handleOrientation);
         
-        // Dispose Three.js resources
-        this.scene.traverse(object => {
-            if (object.geometry) object.geometry.dispose();
-            if (object.material) {
-                if (object.material.map) object.material.map.dispose();
-                object.material.dispose();
-            }
-        });
-        
-        this.renderer.dispose();
-        
-        // Clean up physics
-        Matter.World.clear(this.world);
-        Matter.Engine.clear(this.engine);
-        
-        // Remove stats if exists
         if (this.stats && this.stats.dom.parentElement) {
             this.stats.dom.parentElement.removeChild(this.stats.dom);
         }
