@@ -1,3 +1,9 @@
+import * as THREE from 'three';
+import Matter from 'matter-js';
+import Stats from 'stats.js';
+
+// Your existing code...
+
 // Configuration and Constants
 const CONFIG = {
     particles: {
