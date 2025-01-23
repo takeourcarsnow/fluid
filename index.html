@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="description" content="Interactive Fluid Simulation using Device Sensors">
     <title>Fluid Simulation</title>
     <style>
         * {
@@ -15,21 +14,8 @@
         body {
             overflow: hidden;
             background: #000;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             color: #fff;
-            touch-action: none;
-            -webkit-touch-callout: none;
-            -webkit-user-select: none;
-            user-select: none;
-        }
-
-        canvas {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            z-index: 1;
         }
 
         #loading-screen {
@@ -44,22 +30,6 @@
             justify-content: center;
             align-items: center;
             z-index: 1000;
-            transition: opacity 0.5s ease-out;
-        }
-
-        .loader {
-            width: 48px;
-            height: 48px;
-            border: 5px solid #fff;
-            border-bottom-color: transparent;
-            border-radius: 50%;
-            animation: rotation 1s linear infinite;
-            margin-bottom: 20px;
-        }
-
-        @keyframes rotation {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
         }
 
         #start-button {
@@ -68,22 +38,14 @@
             background: #4CAF50;
             color: white;
             border: none;
-            border-radius: 25px;
+            border-radius: 5px;
             cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             margin-bottom: 20px;
+            transition: background-color 0.3s;
         }
 
         #start-button:hover {
             background: #45a049;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 8px rgba(0,0,0,0.2);
-        }
-
-        #start-button:active {
-            transform: translateY(0);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
         .instructions {
@@ -106,95 +68,39 @@
             font-size: 12px;
             z-index: 100;
             pointer-events: none;
-            white-space: pre;
-            line-height: 1.5;
         }
 
-        .overlay {
+        #error-message {
             position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(circle at center, transparent 0%, rgba(0,0,0,0.3) 100%);
-            pointer-events: none;
-            z-index: 2;
-        }
-
-        .error-message {
-            position: fixed;
-            bottom: 20px;
+            top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: #ff4444;
+            background: rgba(255, 0, 0, 0.8);
             color: white;
             padding: 10px 20px;
             border-radius: 5px;
             z-index: 1000;
             display: none;
-            animation: fadeIn 0.3s ease-out;
         }
 
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translate(-50%, 20px); }
-            to { opacity: 1; transform: translate(-50%, 0); }
-        }
-
-        .controls {
+        canvas {
             position: fixed;
-            top: 10px;
-            right: 10px;
-            z-index: 100;
-            display: flex;
-            gap: 10px;
-        }
-
-        .control-button {
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
-            color: white;
-            padding: 8px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: background 0.3s ease;
-        }
-
-        .control-button:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        @media (max-width: 768px) {
-            .instructions {
-                font-size: 12px;
-                padding: 0 20px;
-            }
-
-            #debug-info {
-                font-size: 10px;
-            }
+            top: 0;
+            left: 0;
         }
     </style>
 </head>
 <body>
     <div id="loading-screen">
-        <div class="loader"></div>
         <button id="start-button">Start Simulation</button>
         <div class="instructions">
             <p>Tilt your device to control the fluid simulation.</p>
             <p>Touch the screen to interact with particles.</p>
-            <p>Please allow sensor access when prompted.</p>
         </div>
     </div>
 
-    <div class="overlay"></div>
     <div id="debug-info"></div>
-
-    <div class="controls">
-        <button class="control-button" id="reset-button">Reset</button>
-        <button class="control-button" id="toggle-debug">Toggle Debug</button>
-    </div>
-
-    <div class="error-message" id="error-message"></div>
+    <div id="error-message"></div>
 
     <!-- Three.js -->
     <script async src="https://unpkg.com/es-module-shims/dist/es-module-shims.js"></script>
@@ -213,43 +119,18 @@
     <!-- Stats.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r17/Stats.min.js"></script>
 
-    <!-- Post Processing -->
-    <script type="module" src="https://unpkg.com/three@0.155.0/examples/jsm/postprocessing/EffectComposer.js"></script>
-    <script type="module" src="https://unpkg.com/three@0.155.0/examples/jsm/postprocessing/RenderPass.js"></script>
-    <script type="module" src="https://unpkg.com/three@0.155.0/examples/jsm/postprocessing/UnrealBloomPass.js"></script>
-    <script type="module" src="https://unpkg.com/three@0.155.0/examples/jsm/postprocessing/ShaderPass.js"></script>
-
     <!-- Main Application -->
     <script type="module" src="/src/app.js"></script>
 
     <script>
-        // Additional controls functionality
-        document.getElementById('reset-button').addEventListener('click', () => {
-            window.location.reload();
-        });
-
-        document.getElementById('toggle-debug').addEventListener('click', () => {
-            const debugInfo = document.getElementById('debug-info');
-            debugInfo.style.display = debugInfo.style.display === 'none' ? 'block' : 'none';
-        });
-
-        // Error handling
-        function showError(message) {
+        window.addEventListener('error', function(e) {
+            console.error('Global error:', e.error);
             const errorElement = document.getElementById('error-message');
-            errorElement.textContent = message;
+            errorElement.textContent = 'Error: ' + e.error.message;
             errorElement.style.display = 'block';
             setTimeout(() => {
                 errorElement.style.display = 'none';
-            }, 3000);
-        }
-
-        // Handle visibility change
-        document.addEventListener('visibilitychange', () => {
-            if (document.hidden) {
-                // Pause simulation if needed
-            } else {
-                // Resume simulation if needed
-            }
+            }, 5000);
         });
     </script>
 </body>
